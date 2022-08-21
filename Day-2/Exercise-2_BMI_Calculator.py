@@ -10,3 +10,4 @@ new_weight = int(weight)
 BMI = int(new_weight / new_height**2)
 
 print(BMI)
+ 
