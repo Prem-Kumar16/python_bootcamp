@@ -1,34 +1,58 @@
-import smtplib
-from twilio.rest import Client
+from datetime import datetime, timedelta
+from data_manager import DataManager
+from flight_search import FlightSearch
+from notification_manager import NotificationManager
 
-TWILIO_SID = YOUR TWILIO ACCOUNT SID
-TWILIO_AUTH_TOKEN = YOUR TWILIO AUTH TOKEN
-TWILIO_VIRTUAL_NUMBER = YOUR TWILIO VIRTUAL NUMBER
-TWILIO_VERIFIED_NUMBER = YOUR TWILIO VERIFIED NUMBER
-MAIL_PROVIDER_SMTP_ADDRESS = YOUR EMAIL PROVIDER SMTP ADDRESS "smtp.gmail.com"
-MY_EMAIL = YOUR EMAIL
-MY_PASSWORD = YOUR PASSWORD
 
-class NotificationManager:
+ORIGIN_CITY_IATA = "LON"
 
-    def __init__(self):
-        self.client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+data_manager = DataManager()
+flight_search = FlightSearch()
+notification_manager = NotificationManager()
 
-    def send_sms(self, message):
-        message = self.client.messages.create(
-            body=message,
-            from_=TWILIO_VIRTUAL_NUMBER,
-            to=TWILIO_VERIFIED_NUMBER,
-        )
-        print(message.sid)
+sheet_data = data_manager.get_destination_data()
 
-    def send_emails(self, emails, message, google_flight_link):
-        with smtplib.SMTP(MAIL_PROVIDER_SMTP_ADDRESS) as connection:
-            connection.starttls()
-            connection.login(MY_EMAIL, MY_PASSWORD)
-            for email in emails:
-                connection.sendmail(
-                    from_addr=MY_EMAIL,
-                    to_addrs=email,
-                    msg=f"Subject:New Low Price Flight!\n\n{message}\n{google_flight_link}".encode('utf-8')
-                )
+if sheet_data[0]["iataCode"] == "":
+    city_names = [row["city"] for row in sheet_data]
+    data_manager.city_codes = flight_search.get_destination_codes(city_names)
+    data_manager.update_destination_codes()
+    sheet_data = data_manager.get_destination_data()
+
+destinations = {
+    data["iataCode"]: {
+        "id": data["id"],
+        "city": data["city"],
+        "price": data["lowestPrice"]
+    } for data in sheet_data}
+
+tomorrow = datetime.now() + timedelta(days=1)
+six_month_from_today = datetime.now() + timedelta(days=6 * 30)
+
+for destination_code in destinations:
+    flight = flight_search.check_flights(
+        ORIGIN_CITY_IATA,
+        destination_code,
+        from_time=tomorrow,
+        to_time=six_month_from_today
+    )
+    print(flight.price)
+    if flight is None:
+        continue
+
+    if flight.price < destinations[destination_code]["price"]:
+
+        users = data_manager.get_customer_emails()
+        emails = [row["email"] for row in users]
+        names = [row["firstName"] for row in users]
+
+        message = f"Low price alert! Only £{flight.price} to fly from {flight.origin_city}-{flight.origin_airport} to {flight.destination_city}-{flight.destination_airport}, from {flight.out_date} to {flight.return_date}."
+
+        if flight.stop_overs > 0:
+            message += f"\nFlight has {flight.stop_overs} stop over, via {flight.via_city}."
+
+        link = f"https://www.google.co.uk/flights?hl=en#flt={flight.origin_airport}.{flight.destination_airport}.{flight.out_date}*{flight.destination_airport}.{flight.origin_airport}.{flight.return_date}"
+        
+        notification_manager.send_emails(emails, message, link)
+
+
+
