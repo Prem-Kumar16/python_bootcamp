@@ -1,0 +1,27 @@
+/************* TAG SELECTORS *************************/
+
+body {
+  background-color: yellow;
+}
+
+
+img:hover {
+  background-color: gold;
+}
+
+
+/******************* class Selectors *********************/
+
+.bacon {
+  background-color: green;
+}
+
+.broccoli {
+  background-color: red;
+}
+
+/******************* id Selectors *********************/
+
+#heading {
+  color : blue;
+}
